@@ -81,7 +81,6 @@ class SPPF(nn.Module):
 
 class Detect(nn.Module):
     """YOLOv5 Detect head"""
-    stride = torch.tensor([8., 16., 32.])
 
     def __init__(self, nc=80, anchors=(), ch=()):
         super().__init__()
@@ -89,6 +88,7 @@ class Detect(nn.Module):
         self.no = nc + 5
         self.nl = len(anchors)
         self.na = len(anchors[0]) // 2
+        self.register_buffer('stride', torch.tensor([8., 16., 32.]))
         self.grid = [torch.empty(0)] * self.nl
         self.anchor_grid = [torch.empty(0)] * self.nl
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))
