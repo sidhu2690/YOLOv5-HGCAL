@@ -119,7 +119,7 @@ def save_checkpoint(model, optimizer, epoch, best_fitness, path):
     torch.save({
         'epoch': epoch,
         'best_fitness': best_fitness,
-        'model': deepcopy(model).half().state_dict(),
+        'model': deepcopy(model).float().state_dict(),
         'optimizer': optimizer.state_dict(),
     }, path)
 
@@ -187,8 +187,8 @@ def validate(model, dataloader, compute_loss, device):
         imgs = imgs.to(device).float()
         targets = targets.to(device)
         
-        pred = model(imgs)
-        _, loss_items = compute_loss(pred, targets)
+        pred, train_out = model(imgs)
+        _, loss_items = compute_loss(train_out, targets)
         val_loss = (val_loss * i + loss_items) / (i + 1)
     
     print(f'Val Loss - box: {val_loss[0]:.4f}, obj: {val_loss[1]:.4f}, cls: {val_loss[2]:.4f}')
