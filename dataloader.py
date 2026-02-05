@@ -1,8 +1,3 @@
-"""
-Minimal YOLOv5 Dataloader
-Stripped down to essential components only
-"""
-
 import os
 import glob
 import random
