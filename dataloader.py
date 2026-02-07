@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 
-IMG_FORMATS = ('bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'webp')
+IMG_FORMATS = ('npy',) 
 
 
 def img2label_paths(img_paths):
@@ -17,25 +17,25 @@ def img2label_paths(img_paths):
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 
-def letterbox(im, new_shape=640, color=(114, 114, 114)):
-    """Resize image preserving aspect ratio, pad remainder with grey"""
+def letterbox(im, new_shape=640, pad_value=0):  # Changed: pad_value=0 (no signal)
+    """Resize image preserving aspect ratio, pad remainder (arbitrary channels)"""
     h0, w0 = im.shape[:2]
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
 
     r = min(new_shape[0] / h0, new_shape[1] / w0)
     new_w, new_h = int(round(w0 * r)), int(round(h0 * r))
-
     dw, dh = (new_shape[1] - new_w) / 2, (new_shape[0] - new_h) / 2
+    top, left = int(round(dh - 0.1)), int(round(dw - 0.1))
 
     if (w0, h0) != (new_w, new_h):
         im = cv2.resize(im, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    im = cv2.copyMakeBorder(im, top, bottom, left, right,
-                            cv2.BORDER_CONSTANT, value=color)
-    return im, r, (dw, dh)
+    # Changed: numpy padding for 16 channels (cv2.copyMakeBorder needs color tuple)
+    padded = np.full((new_shape[0], new_shape[1], im.shape[2]), pad_value, dtype=im.dtype)
+    padded[top:top+im.shape[0], left:left+im.shape[1]] = im
+
+    return padded, r, (dw, dh)
 
 
 def create_dataloader(path, imgsz, batch_size, workers=8, shuffle=False):
@@ -52,7 +52,7 @@ def create_dataloader(path, imgsz, batch_size, workers=8, shuffle=False):
 
 
 class YOLODataset(Dataset):
-    """Minimal YOLO dataset – labels stay in normalised xywh throughout."""
+    """YOLO dataset for 16-channel .npy images (736×736×16 uint8)."""
 
     def __init__(self, path, img_size=640):
         self.img_size = img_size
@@ -88,29 +88,27 @@ class YOLODataset(Dataset):
         return len(self.im_files)
 
     def __getitem__(self, index):
-        # --- image ---
-        img = cv2.imread(self.im_files[index])
+        # --- image (16-channel .npy) ---
+        img = np.load(self.im_files[index])  # Changed: np.load instead of cv2.imread
         assert img is not None, f'Image not found: {self.im_files[index]}'
         h0, w0 = img.shape[:2]
 
         img, r, (pad_w, pad_h) = letterbox(img, self.img_size)
         h, w = img.shape[:2]
 
-        # --- labels  [cls, xc, yc, bw, bh]  all normalised ---
+        # --- labels [cls, xc, yc, bw, bh] all normalised ---
         labels = self.labels[index].copy()
         nl = len(labels)
         if nl:
-            # map normalised-to-original  →  normalised-to-letterboxed
             labels[:, 1] = (labels[:, 1] * w0 * r + pad_w) / w   # xc
             labels[:, 2] = (labels[:, 2] * h0 * r + pad_h) / h   # yc
             labels[:, 3] = labels[:, 3] * w0 * r / w              # bw
             labels[:, 4] = labels[:, 4] * h0 * r / h              # bh
 
-        # --- HWC-BGR  →  CHW-RGB  →  float [0,1] ---
-        img = img.transpose(2, 0, 1)[::-1]
+        # --- HWC → CHW, float [0,1] ---
+        img = img.transpose(2, 0, 1) 
         img = np.ascontiguousarray(img)
 
-        # [placeholder-batch-idx, cls, xc, yc, bw, bh]
         labels_out = torch.zeros((nl, 6))
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
@@ -124,5 +122,5 @@ class YOLODataset(Dataset):
     def collate_fn(batch):
         imgs, labels, paths, shapes = zip(*batch)
         for i, lb in enumerate(labels):
-            lb[:, 0] = i                       # write batch index
+            lb[:, 0] = i
         return torch.stack(imgs, 0), torch.cat(labels, 0), paths, shapes
