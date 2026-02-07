@@ -19,13 +19,13 @@ from loss import ComputeLoss
 class Config:
     train_path = 'data/train/images'
     val_path   = 'data/val/images'
-    nc         = 1
-    in_ch      = 3
+    nc         = 4
+    in_ch      = 16
     depth      = 0.33
     width      = 0.50
     epochs     = 100
     batch_size = 16
-    imgsz      = 640
+    imgsz      = 736
     workers    = 8
     save_dir   = 'runs/train'
     device     = '0'           # '0' or 'cpu'
