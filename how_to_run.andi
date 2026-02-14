@@ -1,23 +1,22 @@
 qsub -I -q gpulong -l select=1:ncpus=16:host=gpu3,walltime=8:00:00
-cd /persistent/data2/ms21080/hgcal/
+cd /persistent/data1/ms21080/Data/YOLO_HGCAL/MODEL_000/
 conda activate yolov5
 
 
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-11.6/targets/x86_64-linux/lib:/usr/local/cuda-11.6/lib64
 
-echo $LD_LIBRARY_PATH
 
 
 python train.py \
     --data data/muon47m.yaml \
     --cfg models/yolov5s47m.yaml \
-    --hyp hyp_muon_v2.yaml \
+    --hyp hyp_main_47.yaml \
     --weights '' \
     --img 736 \
     --batch-size 32 \
-    --epochs 100 \
+    --epochs 30 \
     --device 0 \
     --workers 4 \
-    --project /persistent/data2/ms21080/hgcal/runs/train \
-    --name muon_exp_hypfix
+    --project /persistent/data1/ms21080/Data/YOLO_HGCAL/MODEL_000/runs/train \
+    --name run0
