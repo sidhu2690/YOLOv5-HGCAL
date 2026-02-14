@@ -7,7 +7,6 @@ unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-11.6/targets/x86_64-linux/lib:/usr/local/cuda-11.6/lib64
 
 
-
 python train.py \
     --data data/muon47m.yaml \
     --cfg models/yolov5s47m.yaml \
@@ -18,5 +17,6 @@ python train.py \
     --epochs 30 \
     --device 0 \
     --workers 4 \
+    --optimizer AdamW \
     --project /persistent/data1/ms21080/Data/YOLO_HGCAL/MODEL_000/runs/train \
-    --name run0
+    --name run0_adamw
