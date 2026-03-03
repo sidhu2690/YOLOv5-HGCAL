@@ -398,6 +398,17 @@ def img2label_paths(img_paths):
     sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
+def img2label_paths(img_paths):
+    # Define label paths as a function of image paths
+    sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
+    return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
+
+
+def img2energy_paths(img_paths):
+    # Define energy paths as a function of image paths
+    sa, sb = os.sep + 'images' + os.sep, os.sep + 'energy' + os.sep
+    return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
+
 
 class LoadImagesAndLabels(Dataset):
     # YOLOv5 train_loader/val_loader, loads images and labels for training and validation
@@ -475,7 +486,20 @@ class LoadImagesAndLabels(Dataset):
         self.shapes = np.array(shapes, dtype=np.float64)
         self.im_files = list(cache.keys())  # update
         self.label_files = img2label_paths(cache.keys())  # update
+        self.energy_files = img2energy_paths(self.im_files)  # energy paths
         n = len(shapes)  # number of images
+
+        # Load energies
+        self.log_energies = np.zeros(n, dtype=np.float32)
+        for i, ef in enumerate(self.energy_files):
+            try:
+                with open(ef) as f:
+                    self.log_energies[i] = np.log(max(float(f.read().strip()), 1.0))
+            except FileNotFoundError:
+                self.log_energies[i] = 0.0
+        LOGGER.info(f'Energy stats: min={self.log_energies.min():.3f}, max={self.log_energies.max():.3f}, '
+                     f'nonzero={np.count_nonzero(self.log_energies)}/{n}')
+
         bi = np.floor(np.arange(n) / batch_size).astype(np.int)  # batch index
         nb = bi[-1] + 1  # number of batches
         self.batch = bi  # batch index of image
@@ -505,6 +529,7 @@ class LoadImagesAndLabels(Dataset):
             self.im_files = [self.im_files[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
             self.labels = [self.labels[i] for i in irect]
+            self.log_energies = self.log_energies[irect]
             self.shapes = s[irect]  # wh
             ar = ar[irect]
 
@@ -654,9 +679,10 @@ class LoadImagesAndLabels(Dataset):
             # labels = cutout(img, labels, p=0.5)
             # nl = len(labels)  # update after cutout
 
-        labels_out = torch.zeros((nl, 6))
+        labels_out = torch.zeros((nl, 7))
         if nl:
-            labels_out[:, 1:] = torch.from_numpy(labels)
+            labels_out[:, 1:6] = torch.from_numpy(labels)
+            labels_out[:, 6] = float(self.log_energies[index])
 
         # Convert
         img = img.transpose((2, 0, 1)) # HWC to CHW, BGR to RGB
