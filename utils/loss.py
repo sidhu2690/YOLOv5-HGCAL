@@ -122,7 +122,8 @@ class ComputeLoss:
         lcls = torch.zeros(1, device=self.device)  # class loss
         lbox = torch.zeros(1, device=self.device)  # box loss
         lobj = torch.zeros(1, device=self.device)  # object loss
-        tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
+        lenergy = torch.zeros(1, device=self.device) # Energy loss
+        tcls, tbox, indices, anchors, tenergies = self.build_targets(p, targets)  # targets
 
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
@@ -132,7 +133,7 @@ class ComputeLoss:
             n = b.shape[0]  # number of targets
             if n:
                 # pxy, pwh, _, pcls = pi[b, a, gj, gi].tensor_split((2, 4, 5), dim=1)  # faster, requires torch 1.8.0
-                pxy, pwh, _, pcls = pi[b, a, gj, gi].split((2, 2, 1, self.nc), 1)  # target-subset of predictions
+                pxy, pwh, _, pcls, penergy = pi[b, a, gj, gi].split((2, 2, 1, self.nc, 1), 1)  # target-subset of predictions
 
                 # Regression
                 pxy = pxy.sigmoid() * 2 - 0.5
@@ -155,6 +156,7 @@ class ComputeLoss:
                     t = torch.full_like(pcls, self.cn, device=self.device)  # targets
                     t[range(n), tcls[i]] = self.cp
                     lcls += self.BCEcls(pcls, t)  # BCE
+                lenergy += nn.functional.mse_loss(penergy.squeeze(-1), tenergies[i])
 
                 # Append targets to text file
                 # with open('targets.txt', 'a') as file:
@@ -170,15 +172,16 @@ class ComputeLoss:
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
+        lenergy *= self.hyp.get('energy', 0.1)
         bs = tobj.shape[0]  # batch size
 
-        return (lbox + lobj + lcls) * bs, torch.cat((lbox, lobj, lcls)).detach()
+        return (lbox + lobj + lcls + lenergy) * bs, torch.cat((lbox, lobj, lcls, lenergy)).detach()
 
     def build_targets(self, p, targets):
-        # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
+        # Build targets for compute_loss(), input targets(image,class,x,y,w,h,logenergy)
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
-        tcls, tbox, indices, anch = [], [], [], []
-        gain = torch.ones(7, device=self.device)  # normalized to gridspace gain
+        tcls, tbox, indices, anch, tenergies = [], [], [], [], []
+        gain = torch.ones(8, device=self.device)  # normalized to gridspace gain
         ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
         targets = torch.cat((targets.repeat(na, 1, 1), ai[..., None]), 2)  # append anchor indices
 
@@ -220,15 +223,21 @@ class ComputeLoss:
                 offsets = 0
 
             # Define
-            bc, gxy, gwh, a = t.chunk(4, 1)  # (image, class), grid xy, grid wh, anchors
-            a, (b, c) = a.long().view(-1), bc.long().T  # anchors, image, class
+            bc = t[:, :2]   
+            gxy = t[:, 2:4]
+            gwh = t[:, 4:6]
+            te = t[:, 6]
+            a = t[:, 7].long()
+            b, c = bc.long().T
             gij = (gxy - offsets).long()
-            gi, gj = gij.T  # grid indices
+            gi, gj = gij.T
+
 
             # Append
-            indices.append((b, a, gj.clamp_(0, int(gain[3] - 1)), gi.clamp_(0, int(gain[2] - 1))))  # image, anchor, grid indices
-            tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
-            anch.append(anchors[a])  # anchors
-            tcls.append(c)  # class
+            indices.append((b, a, gj.clamp_(0, int(gain[3] - 1)), gi.clamp_(0, int(gain[2] - 1))))
+            tbox.append(torch.cat((gxy - gij, gwh), 1))
+            anch.append(anchors[a])
+            tcls.append(c) 
+            tenergies.append(te)
 
-        return tcls, tbox, indices, anch
+        return tcls, tbox, indices, anch, tenergies
