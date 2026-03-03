@@ -49,9 +49,9 @@ from utils.torch_utils import select_device, time_sync
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
     gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
-    for *xyxy, conf, cls in predn.tolist():
+    for *xyxy, conf, cls, energy in predn.tolist():
         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+        line = (cls, *xywh, conf, energy) if save_conf else (cls, *xywh)
         with open(file, 'a') as f:
             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
@@ -66,7 +66,8 @@ def save_one_json(predn, jdict, path, class_map):
             'image_id': image_id,
             'category_id': class_map[int(p[5])],
             'bbox': [round(x, 3) for x in b],
-            'score': round(p[4], 5)})
+            'score': round(p[4], 5),
+            'energy': round(p[6], 3)})
 
 
 def process_batch(detections, labels, iouv):
@@ -186,7 +187,7 @@ def run(
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-    loss = torch.zeros(3, device=device)
+    loss = torch.zeros(4, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     callbacks.run('on_val_start')
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
@@ -211,15 +212,15 @@ def run(
             loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
         # NMS
-        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
-        lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
+        targets[:, 2:6] *= torch.tensor((width, height, width, height), device=device)  # to pixels
+        lb = [targets[targets[:, 0] == i, 1:6] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
         out = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
         dt[2] += time_sync() - t3
 
         # Metrics
         for si, pred in enumerate(out):
-            labels = targets[targets[:, 0] == si, 1:]
+            labels = targets[targets[:, 0] == si, 1:6]
             nl, npr = labels.shape[0], pred.shape[0]  # number of labels, predictions
             path, shape = Path(paths[si]), shapes[si][0]
             correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
@@ -256,7 +257,7 @@ def run(
         # Plot images
         if plots and batch_i < 3:
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, targets[:, :6], paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
             Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
 
