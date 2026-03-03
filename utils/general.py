@@ -749,7 +749,7 @@ def non_max_suppression(prediction,
     """
 
     bs = prediction.shape[0]  # batch size
-    nc = prediction.shape[2] - 5  # number of classes
+    nc = prediction.shape[2] - 5 - 1 # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
 
     # Checks
@@ -766,11 +766,13 @@ def non_max_suppression(prediction,
     merge = False  # use merge-NMS
 
     t = time.time()
-    output = [torch.zeros((0, 6), device=prediction.device)] * bs
+    output = [torch.zeros((0, 7), device=prediction.device)] * bs
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[xc[xi]]  # confidence
+        x_energy = x[:, -1:]
+        x = x[:, :-1] 
 
         # Cat apriori labels if autolabelling
         if labels and len(labels[xi]):
@@ -780,6 +782,7 @@ def non_max_suppression(prediction,
             v[:, 4] = 1.0  # conf
             v[range(len(lb)), lb[:, 0].long() + 5] = 1.0  # cls
             x = torch.cat((x, v), 0)
+            x_energy = torch.cat((x_energy, torch.zeros((len(lb), 1), device=x.device)), 0)
 
         # If none remain process next image
         if not x.shape[0]:
@@ -794,10 +797,11 @@ def non_max_suppression(prediction,
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
             i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
+            x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float(), x_energy[i]), 1)
         else:  # best class only
             conf, j = x[:, 5:].max(1, keepdim=True)
-            x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
+            mask = conf.view(-1) > conf_thres
+            x = torch.cat((box, conf, j.float(), x_energy), 1)[mask]
 
         # Filter by class
         if classes is not None:
