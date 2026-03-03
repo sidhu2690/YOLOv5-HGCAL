@@ -7,6 +7,7 @@ warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 box: 0.05
 cls: 0.5
+energy: 0.1
 cls_pw: 2.0
 obj: 1.0
 obj_pw: 1.0
