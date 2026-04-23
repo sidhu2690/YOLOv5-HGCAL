@@ -2,7 +2,8 @@
 """
 Image augmentation functions
 """
-
+import torch
+import torch.nn.functional as F
 import math
 import random
 
@@ -113,11 +114,28 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     dw /= 2  # divide padding into 2 sides
     dh /= 2
 
-    if shape[::-1] != new_unpad:  # resize
-        im = cv2.resize(im, new_unpad, interpolation=cv2.INTER_LINEAR)
+    if shape[::-1] != new_unpad:
+        if im.shape[2] > 4:
+            im_t = torch.from_numpy(im.transpose(2, 0, 1)).unsqueeze(0).float()
+            im_t = F.interpolate(im_t, size=(new_unpad[1], new_unpad[0]), mode='bilinear', align_corners=False)
+            im = im_t.squeeze(0).permute(1, 2, 0).byte().numpy()
+        else:
+            im = cv2.resize(im, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+       
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+
+    if im.shape[2] > 4:
+        h_new = im.shape[0] + top + bottom
+        w_new = im.shape[1] + left + right
+        im_padded = np.full((h_new, w_new, im.shape[2]), 114, dtype=im.dtype)
+        im_padded[top:top + im.shape[0], left:left + im.shape[1]] = im
+        im = im_padded
+    else:
+        im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+
+    
     return im, ratio, (dw, dh)
 
 
