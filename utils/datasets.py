@@ -238,9 +238,10 @@ class LoadImages:
             # Read image
             self.count += 1
             #print('\n\n kiss\n\n')
-            f_name, extensiion = os.path.splitext(path)
-            img0 = cv2.imread(path)  # BGR
-            img0 = np.load(f_name + '.npy')
+            if path.endswith('.npy'):
+              img0 = np.load(path)
+            else:
+              img0 = cv2.imread(path)
             assert img0 is not None, f'Image Not Found {path}'
             s = f'image {self.count}/{self.nf} {path}: '
 
@@ -703,8 +704,9 @@ class LoadImagesAndLabels(Dataset):
             h0, w0 = im.shape[:2]  # orig hw
             r = self.img_size / max(h0, w0)  # ratio
             if r != 1:  # if sizes are not equal
-                im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
-                                interpolation=cv2.INTER_LINEAR if (self.augment or r > 1) else cv2.INTER_AREA)
+                im_t = torch.from_numpy(im.transpose(2, 0, 1)).unsqueeze(0).float()
+                im_t = F.interpolate(im_t, size=(int(h0 * r), int(w0 * r)), mode='bilinear', align_corners=False)
+                im = im_t.squeeze(0).permute(1, 2, 0).byte().numpy()
             return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
         else:
             return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
@@ -713,7 +715,7 @@ class LoadImagesAndLabels(Dataset):
         # Saves an image as an *.npy file for faster loading
         f = self.npy_files[i]
         if not f.exists():
-            np.save(f.as_posix(), cv2.imread(self.im_files[i]))
+            np.save(f.as_posix(), np.load(self.im_files[i]))
 
     def load_mosaic(self, index):
         # YOLOv5 4-mosaic loader. Loads 1 image + 3 random images into a 4-image mosaic
