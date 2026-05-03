@@ -495,7 +495,8 @@ class LoadImagesAndLabels(Dataset):
         for i, ef in enumerate(self.energy_files):
             try:
                 with open(ef) as f:
-                    self.log_energies[i] = np.log(max(float(f.read().strip()), 1.0))
+                    E_MAX_MEV = 1_000_000.0
+                    self.log_energies[i] = float(f.read().strip()) / E_MAX_MEV
             except FileNotFoundError:
                 self.log_energies[i] = 0.0
         LOGGER.info(f'Energy stats: min={self.log_energies.min():.3f}, max={self.log_energies.max():.3f}, '
